@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Платформер</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            min-height: 100vh;
+            background: linear-gradient(145deg, #0a2f3a 0%, #0a1f2a 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Courier New', monospace;
+        }
+
+        .game-container {
+            background: #1e3a3f;
+            padding: 20px;
+            border-radius: 28px;
+            box-shadow: 0 20px 30px rgba(0,0,0,0.4);
+        }
+
+        canvas {
+            display: block;
+            margin: 0 auto;
+            border-radius: 16px;
+            box-shadow: 0 8px 18px rgba(0,0,0,0.3);
+            cursor: pointer;
+        }
+
+        .info {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 14px;
+            color: #f0e6a0;
+            font-weight: bold;
+            text-shadow: 2px 2px 0 #1a3a2a;
+            font-size: 1.2rem;
+        }
+
+        .controls {
+            background: #0e2a2e;
+            padding: 8px 12px;
+            border-radius: 40px;
+            font-size: 0.8rem;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+<div>
+    <div class="game-container">
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+        <div class="info">
+            <span>⭐ СКОР: <span id="scoreValue">0</span></span>
+            <span class="controls">◀  ▶  |  ПРОБЕЛ / ↑</span>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function(){
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        const W = 800, H = 400;
+        
+        const PLAYER_WIDTH = 24;
+        const PLAYER_HEIGHT = 28;
+        let player = {
+            x: 60,
+            y: 0,
+            vx: 0,
+            vy: 0,
+            width: PLAYER_WIDTH,
+            height: PLAYER_HEIGHT,
+            onGround: false,
+            facingRight: true
+        };
+        
+        let platforms = [
+            [0, H-30, W, 30],
+            [150, H-90, 100, 20],
+            [350, H-140, 100, 20],
+            [550, H-190, 90, 20],
+            [700, H-260, 70, 20],
+            [40, H-210, 80, 20],
+            [280, H-310, 80, 18],
+            [520, H-340, 70, 18]
+        ];
+        
+        let coins = [];
+        let score = 0;
+        
+        const GRAVITY = 0.7;
+        const JUMP_POWER = -11;
+        const GROUND_Y = H - 30;
+        
+        const keys = {
+            ArrowLeft: false,
+            ArrowRight: false,
+            Space: false,
+            ArrowUp: false
+        };
+        
+        function initGame(){
+            player.y = GROUND_Y - PLAYER_HEIGHT;
+            player.vy = 0;
+            player.vx = 0;
+            score = 0;
+            updateScoreDisplay();
+            generateCoins();
+        }
+        
+        function generateCoins(){
+            coins = [];
+            for(let i=0; i<platforms.length; i++){
+                let p = platforms[i];
+                let coinW = 12, coinH = 12;
+                let count = (i === 0) ? 2 : (Math.random() > 0.4 ? 1 : 2);
+                for(let c=0; c<count; c++){
+                    let offsetX = 15 + Math.random() * (p[2] - coinW - 20);
+                    let coinX = p[0] + offsetX;
+                    let coinY = p[1] - coinH - 2;
+                    coins.push({
+                        x: coinX,
+                        y: coinY,
+                        w: coinW,
+                        h: coinH,
+                        collected: false
+                    });
+                }
+            }
+            for(let i=0;i<3;i++){
+                coins.push({
+                    x: 120 + i*180,
+                    y: H-130 - i*22,
+                    w: 10,
+                    h: 10,
+                    collected: false
+                });
+            }
+        }
+        
+        function updateScoreDisplay(){
+            document.getElementById('scoreValue').innerText = score;
+        }
+        
+        function collide(r1, r2){
+            return !(r2.x > r1.x + r1.w ||
+                r2.x + r2.w < r1.x ||
+                r2.y > r1.y + r1.h ||
+                r2.y + r2.h < r1.y);
+        }
+        
+        function applyPhysicsAndCollisions(){
+            player.x += player.vx;
+            player.y += player.vy;
+            player.vy += GRAVITY;
+            
+            if(player.x < 0){
+                player.x = 0;
+                player.vx = 0;
+            }
+            if(player.x + player.width > W){
+                player.x = W - player.width;
+                player.vx = 0;
+            }
+            
+            player.onGround = false;
+            
+            for(let plat of platforms){
+                let platBox = {x: plat[0], y: plat[1], w: plat[2], h: plat[3]};
+                let playerBox = {x: player.x, y: player.y, w: player.width, h: player.height};
+                
+                if(collide(playerBox, platBox)){
+                    let overlapTop = (player.y + player.height) - platBox.y;
+                    let overlapBottom = (platBox.y + platBox.h) - player.y;
+                    let overlapLeft = (player.x + player.width) - platBox.x;
+                    let overlapRight = (platBox.x + platBox.w) - player.x;
+                    
+                    let minOverlap = Math.min(overlapTop, overlapBottom, overlapLeft, overlapRight);
+                    
+                    if(minOverlap === overlapTop && player.vy >= 0){
+                        player.y = platBox.y - player.height;
+                        player.vy = 0;
+                        player.onGround = true;
+                    }
+                    else if(minOverlap === overlapBottom && player.vy < 0){
+                        player.y = platBox.y + platBox.h;
+                        player.vy = 0;
+                    }
+                    else if(minOverlap === overlapLeft){
+                        player.x = platBox.x - player.width;
+                    }
+                    else if(minOverlap === overlapRight){
+                        player.x = platBox.x + platBox.w;
+                    }
+                }
+            }
+            
+            if(player.y + player.height > H+50){
+                initGame();
+            }
+        }
+        
+        function collectCoins(){
+            for(let i=0; i<coins.length; i++){
+                let c = coins[i];
+                if(c.collected) continue;
+                let coinBox = {x: c.x, y: c.y, w: c.w, h: c.h};
+                let playerBox = {x: player.x, y: player.y, w: player.width, h: player.height};
+                if(collide(coinBox, playerBox)){
+                    c.collected = true;
+                    score++;
+                    updateScoreDisplay();
+                }
+            }
+        }
+        
+        function handleInput(){
+            const ACC = 0.7;
+            const MAX_SPEED = 5.8;
+            const DAMP = 0.92;
+            
+            if(keys.ArrowLeft){
+                player.vx -= ACC;
+                if(player.vx < -MAX_SPEED) player.vx = -MAX_SPEED;
+                player.facingRight = false;
+            }
+            if(keys.ArrowRight){
+                player.vx += ACC;
+                if(player.vx > MAX_SPEED) player.vx = MAX_SPEED;
+                player.facingRight = true;
+            }
+            if(!keys.ArrowLeft && !keys.ArrowRight){
+                player.vx *= DAMP;
+                if(Math.abs(player.vx) < 0.2) player.vx = 0;
+            }
+            
+            if((keys.Space || keys.ArrowUp) && player.onGround){
+                player.vy = JUMP_POWER;
+                player.onGround = false;
+            }
+        }
+        
+        function draw(){
+            ctx.clearRect(0,0,W,H);
+            
+            ctx.fillStyle = "#72bcd4";
+            ctx.fillRect(0,0,W,H);
+            
+            ctx.fillStyle = "#ecf9ff";
+            ctx.beginPath();
+            ctx.ellipse(120,50,40,35,0,0,Math.PI*2);
+            ctx.ellipse(170,40,45,38,0,0,Math.PI*2);
+            ctx.ellipse(210,55,38,32,0,0,Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(650,70,55,45,0,0,Math.PI*2);
+            ctx.ellipse(710,58,50,42,0,0,Math.PI*2);
+            ctx.fill();
+            
+            for(let plat of platforms){
+                ctx.fillStyle = "#8B5A2B";
+                ctx.shadowBlur = 4;
+                ctx.fillRect(plat[0], plat[1], plat[2], plat[3]);
+                ctx.fillStyle = "#C97E3A";
+                ctx.fillRect(plat[0]+4, plat[1]-3, plat[2]-8, 6);
+                ctx.fillStyle = "#B96F2C";
+                ctx.fillRect(plat[0]+2, plat[1]+plat[3]-5, plat[2]-4, 5);
+            }
+            ctx.shadowBlur = 0;
+            
+            for(let c of coins){
+                if(c.collected) continue;
+                ctx.fillStyle = "#FFD966";
+                ctx.shadowBlur = 8;
+                ctx.beginPath();
+                ctx.ellipse(c.x + c.w/2, c.y + c.h/2, c.w/2, c.h/2, 0, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = "#FFB347";
+                ctx.beginPath();
+                ctx.ellipse(c.x + c.w/2-1, c.y + c.h/2-1, 2, 2, 0, 0, Math.PI*2);
+                ctx.fill();
+            }
+            ctx.shadowBlur = 0;
+            
+            ctx.fillStyle = "#3a6ea5";
+            ctx.shadowBlur = 3;
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            ctx.fillStyle = "#FFC857";
+            ctx.fillRect(player.x+4, player.y-6, 6, 8);
+            if(player.facingRight){
+                ctx.fillStyle = "#fff";
+                ctx.fillRect(player.x+16, player.y+7, 4, 4);
+            } else {
+                ctx.fillStyle = "#fff";
+                ctx.fillRect(player.x+4, player.y+7, 4, 4);
+            }
+            ctx.fillStyle = "#2b2b2b";
+            ctx.fillRect(player.x+8, player.y+18, 8, 6);
+            ctx.shadowBlur = 0;
+            
+            ctx.font = "bold 14 monospace";
+            ctx.fillStyle = "#1e2f2f";
+            ctx.fillText("Собери все звёзды!", 20, 40);
+        }
+        
+        function gameLoop(){
+            handleInput();
+            applyPhysicsAndCollisions();
+            collectCoins();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        function keydownHandler(e){
+            if(e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === ' '){
+                e.preventDefault();
+            }
+            if(e.key === 'ArrowLeft') keys.ArrowLeft = true;
+            if(e.key === 'ArrowRight') keys.ArrowRight = true;
+            if(e.key === 'ArrowUp') keys.ArrowUp = true;
+            if(e.key === ' ') {
+                keys.Space = true;
+                e.preventDefault();
+            }
+        }
+        
+        function keyupHandler(e){
+            if(e.key === 'ArrowLeft') keys.ArrowLeft = false;
+            if(e.key === 'ArrowRight') keys.ArrowRight = false;
+            if(e.key === 'ArrowUp') keys.ArrowUp = false;
+            if(e.key === ' ') keys.Space = false;
+        }
+        
+        window.addEventListener('keydown', keydownHandler);
+        window.addEventListener('keyup', keyupHandler);
+        
+        initGame();
+        gameLoop();
+    })();
+</script>
+</body>
+</html>
